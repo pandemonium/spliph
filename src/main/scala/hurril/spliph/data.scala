@@ -6,6 +6,7 @@ import cats._,
 
 
 package object markup {
+  import hurril.spliph.data.markup.Node.Markup
   // This thing might just as well be a linked list of siblings
   // encoded in each Node.
   type Nodes      = List[Node.T]
@@ -106,32 +107,43 @@ package object markup {
       def attributes: Attributes
     }
 
-    def children(el: T): List[T] = el match {
-      case ChildNodes(_) => 
-//        children
-        List.empty
+    def firstChildNamed(parent: T)(
+                          name: Qname.T): Option[T] =
+      children(parent)
+        .filter(_.name == name)
+        .headOption
+
+    def children(parent: T): List[T] = parent match {
+      case ChildNodes(nodes) =>
+        nodes.collect { case Markup(element) =>
+          element
+        }
+    }
+
+    def text(parent: T): String = parent match {
+      case ChildNodes(nodes) =>
+        nodes.collect { case Node.Content(text) => 
+          text
+        }.mkString
     }
 
     object ChildNodes {
       def unapply(t: T): Option[Nodes] = t match {
-        case Empty(_, _)        => List.empty.some
-        case NonEmpty(_, _, cs) => cs.some
+        case Empty(_, _)           => List.empty.some
+        case NonEmpty(_, _, nodes) => nodes.some
       }
     }
 
     object TextContent {
-      def unapply(t: T): Option[List[String]] = t match {
-        case ChildNodes(cs) => cs.collect {
-          case Node.Content(text) => text
-        }.some
-      }
+      def unapply(t: T): Option[String] =
+        text(t).some
     }
 
     def makeEmpty(name: Qname.T, 
             attributes: Attribute*): T = 
       Empty(name, attributes.toList)
 
-    def make(name: Qname.T, 
+    def make(name: Qname.T,
        attributes: Attribute*): T = 
       NonEmpty(name, attributes.toList, List.empty)
 

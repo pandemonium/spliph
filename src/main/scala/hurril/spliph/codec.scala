@@ -5,17 +5,28 @@ import cats.data._,
        cats.implicits._
 import data.markup._
 
-
+// Don't I need a Cursor API that can be positioned on a node
+// in a way that also permits jumping across siblings.
 object Decoder {
   type Result[A] = Either[Error.T, A]
   type T[A]      = Kleisli[Result, Element.T, A]
+  type U[A]      = Kleisli[Result, String, A]
 
   object Error {
     sealed trait T
+    case class ExpectedChild(of: Element.T,
+                          named: Qname.T)
+      extends T
+
+    def expectedChild(of: Element.T,
+                   named: Qname.T): T =
+      ExpectedChild(of, named)
   }
 
-  def firstChildNamed(name: String): T[String] = instance {
-    case Element.TextContent(ts) => ts.head.asRight
+  def textOfFirstChildNamed(name: Qname.T): T[String] = instance { parent =>
+    Element.firstChildNamed(parent)(name)
+           .map(Element.text)
+           .toRight(Error.expectedChild(parent, name))
   }
 
   def unable[A](error: Error.T): T[A]              = Kleisli(_ => error.asLeft)
@@ -79,9 +90,11 @@ object RunDecode extends App {
              description: String,
                 calories: Int)
 
-    implicit val decodeBreakfastMenu: Decoder.T[BreakfastMenu] =
-      Decoder.instance { el =>
-        BreakfastMenu(List.empty).asRight
-      }
+    implicit val decodeFood: Decoder.T[Food] = for {
+      name        <- Decoder.textOfFirstChildNamed(Qname.make("name"))
+      price       <- Decoder.textOfFirstChildNamed(Qname.make("price"))
+      description <- Decoder.textOfFirstChildNamed(Qname.make("description"))
+      calories    <- Decoder.textOfFirstChildNamed(Qname.make("calories"))
+    } yield ???
   }
 }
