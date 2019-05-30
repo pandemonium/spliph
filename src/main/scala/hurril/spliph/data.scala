@@ -5,7 +5,9 @@ import cats._,
        cats.implicits._
 
 
-object Markup { markup =>
+package object markup {
+  // This thing might just as well be a linked list of siblings
+  // encoded in each Node.
   type Nodes      = List[Node.T]
   type Attributes = List[Element.Attribute]
 
@@ -64,6 +66,16 @@ object Markup { markup =>
     def makeContent(text: String): T      = Content(text)
     def makeMarkup(element: Element.T): T = Markup(element)
   
+    // Is this a fold left or right?
+    def fold[A](tree: T, z: A)(f: (T, A) => A): A = tree match {
+      case t @ Content(_) => 
+        f(t, z)
+      case e @ Markup(Element.Empty(_, _)) =>
+        f(e, z)
+      case e @ Markup(Element.NonEmpty(_, _, children)) =>
+        children.foldLeft(f(e, z))((b, a) => fold(a, b)(f))
+    }
+
     implicit val showNode: Show[T] = Show {
       case Content(text)   => text
       case Markup(element) => element.show
@@ -80,18 +92,39 @@ object Markup { markup =>
       extends T
     case class NonEmpty(name: Qname.T, 
                   attributes: Attributes,
-                    children: Nodes)
+                  childNodes: Nodes)
       extends T
          with WithChildren
 
     sealed trait WithChildren { self: NonEmpty =>
-      def withChildren(cs: Nodes): NonEmpty =
-        copy(children = cs)
+      def withChildren(children: Nodes): NonEmpty =
+        copy(childNodes = children)
     }
 
     sealed trait Signature {
       def name: Qname.T
       def attributes: Attributes
+    }
+
+    def children(el: T): List[T] = el match {
+      case ChildNodes(_) => 
+//        children
+        List.empty
+    }
+
+    object ChildNodes {
+      def unapply(t: T): Option[Nodes] = t match {
+        case Empty(_, _)        => List.empty.some
+        case NonEmpty(_, _, cs) => cs.some
+      }
+    }
+
+    object TextContent {
+      def unapply(t: T): Option[List[String]] = t match {
+        case ChildNodes(cs) => cs.collect {
+          case Node.Content(text) => text
+        }.some
+      }
     }
 
     def makeEmpty(name: Qname.T, 
@@ -118,31 +151,31 @@ object Markup { markup =>
     implicit val showAttributes: Show[Attributes] = Show { as =>
       as.map(_.show).mkString(" ")
     }
-
-    implicit def elementIsNode(el: T): Node.T =
-      Node.makeMarkup(el)
   }
 
   object Document {
     sealed trait T
+      extends Signature
+
     case class Xml(encoding: String, 
                  standalone: Boolean, // Replace with two different constructors?
-                       root: Element.T)
+                       root: Node.Markup)
       extends T
+
+    sealed trait Signature {
+      def root: Node.T
+    }
 
     def make(encoding: String, 
            standalone: Boolean,
                  root: Element.T): T =
-      Xml(encoding, standalone, root)
-
-    def withRoot(root: Element.T): T =
-      Xml("UTF-8", true, root)
+      Xml(encoding, standalone, Node.Markup(root))
 
     implicit val showDocument: Show[T] = Show {
       case Xml(enc, s, root) =>
         val standalone = if (s) "yes" else "no"
         s"""|<?xml version="1.0" encoding="$enc" standalone="$standalone"?>
-            |${root.show}
+            |${(root: Node.T).show}
         """.stripMargin
     }
   }

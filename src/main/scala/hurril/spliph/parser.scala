@@ -2,13 +2,12 @@ package hurril.spliph
 package parser
 
 import scala.util.parsing.combinator._
-import data._
 import cats.implicits._
+import data.markup._
+import hurril.spliph.codec.SampleData
 
 
 object Xml extends JavaTokenParsers {
-  import Markup._
-
   def qname = qualifiedName | nullName
 
   def qualifiedName = ident ~ (":" ~> ident) ^^ {
@@ -19,12 +18,10 @@ object Xml extends JavaTokenParsers {
 
   def document = xmlDeclaration ~ element ^^ {
     case xmlDecl ~ root =>
+      // This is mildly crappy
       Document.make(
         xmlDecl.get("encoding") getOrElse "utf-8",
-        xmlDecl.get("standalone") collect {
-          case "yes" => true
-          case _     => false
-        } getOrElse false,
+        xmlDecl.get("standalone") exists "yes".==,
         root
       )
   }
@@ -78,7 +75,7 @@ object Xml extends JavaTokenParsers {
   def children: Parser[List[Node.T]] = node.*
 }
 
-object RunXml extends App {
+object RunXml extends App with SampleData {
   val xml = 
   """|<?xml version="1.0"?>
      |<html>
@@ -102,7 +99,15 @@ object RunXml extends App {
      |</html>
   """.stripMargin
 
-  val document = Xml.parseAll(Xml.document, xml2)
-
-  document.map(_.show).map(println)
+  Xml.parseAll(Xml.document, breakfastMenu)
+     .map(doc => Node.fold(doc.root, List.empty[Node.T])(_ :: _))
+     .map { nodes =>
+        nodes.reverse.map {
+          case Node.Content(text) => 
+            text.mkString("/", "", "/")
+          case Node.Markup(element) =>
+            element.name.show.mkString("<", "", ">")
+      }.show
+    }
+    .map(x => println(x))
 }
